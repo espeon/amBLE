@@ -9,7 +9,7 @@ name = "amble"
 path = "src/lib.rs"
 
 [[bin]]
-name = "amaran"
+name = "amble"
 path = "src/main.rs"
 required-features = ["cli"]
 
