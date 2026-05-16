@@ -41,6 +41,20 @@ enum Commands {
         saturation: u16,
         light: Option<String>,
     },
+    Rgb {
+        r: u8,
+        g: u8,
+        b: u8,
+        #[arg(default_value = "100")]
+        brightness: u8,
+        light: Option<String>,
+    },
+    Status {
+        light: Option<String>,
+    },
+    Battery {
+        light: Option<String>,
+    },
     Start,
     Stop,
     Lights,
@@ -104,6 +118,18 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await
             }
+            Commands::Rgb {
+                r, g, b, brightness, light,
+            } => {
+                run_command(
+                    "rgb",
+                    &[r.to_string(), g.to_string(), b.to_string(), brightness.to_string()],
+                    light,
+                )
+                .await
+            }
+            Commands::Status { light } => run_command("status", &[], light).await,
+            Commands::Battery { light } => run_command("battery", &[], light).await,
             Commands::Start => start_daemon().await,
             Commands::Stop => stop_daemon().await,
             Commands::Lights => list_lights().await,

@@ -6,6 +6,7 @@ use crate::pdu::{
 };
 use crate::telink::{
     telink_brightness_payload, telink_cct_payload, telink_hsi_payload, telink_payload,
+    telink_rgbww_payload,
 };
 use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Adapter, Manager, Peripheral};
@@ -14,17 +15,20 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Notify;
+use tokio::sync::broadcast;
 use tokio::time::{sleep, timeout};
 use tracing::{error, info};
 
 const PROXY_DATA_IN: uuid::Uuid = uuid::uuid!("00002add-0000-1000-8000-00805f9b34fb");
 const PROXY_DATA_OUT: uuid::Uuid = uuid::uuid!("00002ade-0000-1000-8000-00805f9b34fb");
+const BATTERY_LEVEL: uuid::Uuid = uuid::uuid!("00002a19-0000-1000-8000-00805f9b34fb");
 
 pub struct MeshController {
     adapter: Adapter,
     peripheral: Option<Peripheral>,
     data_in: Option<btleplug::api::Characteristic>,
     data_out: Option<btleplug::api::Characteristic>,
+    battery: Option<btleplug::api::Characteristic>,
     iv_index: Arc<AtomicU32>,
     seq: u32,
     derived: DerivedNetKey,
@@ -34,6 +38,8 @@ pub struct MeshController {
     pub lights: Vec<LightConfig>,
     beacon_notify: Arc<Notify>,
     filter_notify: Arc<Notify>,
+    response_tx: broadcast::Sender<Vec<u8>>,
+    response_rx: broadcast::Receiver<Vec<u8>>,
 }
 
 impl MeshController {
@@ -61,12 +67,14 @@ impl MeshController {
             .ok_or_else(|| anyhow::anyhow!("no bluetooth adapter found"))?;
 
         let seq = 12000000 + rand::random::<u32>() % 4000000;
+        let (response_tx, response_rx) = broadcast::channel(32);
 
         Ok(Self {
             adapter,
             peripheral: None,
             data_in: None,
             data_out: None,
+            battery: None,
             iv_index: Arc::new(AtomicU32::new(0)),
             seq,
             derived,
@@ -76,6 +84,8 @@ impl MeshController {
             lights: config.lights,
             beacon_notify: Arc::new(Notify::new()),
             filter_notify: Arc::new(Notify::new()),
+            response_tx,
+            response_rx,
         })
     }
 
@@ -180,6 +190,7 @@ impl MeshController {
 
         let data_in = chars.iter().find(|c| c.uuid == PROXY_DATA_IN).cloned();
         let data_out = chars.iter().find(|c| c.uuid == PROXY_DATA_OUT).cloned();
+        let battery = chars.iter().find(|c| c.uuid == BATTERY_LEVEL).cloned();
 
         let (data_in, data_out) = match (data_in, data_out) {
             (Some(di), Some(do_)) => (di, do_),
@@ -199,6 +210,7 @@ impl MeshController {
         let iv_index = self.iv_index.clone();
         let beacon_notify = self.beacon_notify.clone();
         let filter_notify = self.filter_notify.clone();
+        let response_tx = self.response_tx.clone();
 
         let p_notif = peripheral.clone();
         tokio::spawn(async move {
@@ -219,12 +231,16 @@ impl MeshController {
                     info!("← Secure Network Beacon — IV Index: 0x{iv:08x}");
                     beacon_notify.notify_one();
                 }
+                if pdu_type == 0x00 {
+                    let _ = response_tx.send(data.value.clone());
+                }
             }
         });
 
         self.peripheral = Some(peripheral);
         self.data_in = Some(data_in);
         self.data_out = Some(data_out);
+        self.battery = battery;
 
         info!("connected to {name}");
         Ok(true)
@@ -431,6 +447,45 @@ impl MeshController {
         let intensity = (brightness_percent as u16 * 10).min(1000);
         let params = telink_hsi_payload(hue, saturation, intensity);
         self.send(dst, 0x26, &params, 3).await
+    }
+
+    pub async fn set_rgbww(
+        &mut self,
+        dst: u16,
+        r: u16,
+        g: u16,
+        b: u16,
+        ww: u16,
+        cw: u16,
+        intensity: u16,
+    ) -> anyhow::Result<()> {
+        let params = telink_rgbww_payload(r, g, b, ww, cw, intensity);
+        self.send(dst, 0x26, &params, 3).await
+    }
+
+    pub async fn query_status(&mut self, dst: u16) -> anyhow::Result<Vec<u8>> {
+        self.response_rx = self.response_tx.subscribe();
+        self.send(dst, 0x26, &telink_payload(0xcf, 0x01), 1).await?;
+        match timeout(Duration::from_secs(3), self.response_rx.recv()).await {
+            Ok(Ok(data)) => Ok(data),
+            Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
+                anyhow::bail!("response channel lagged")
+            }
+            Ok(Err(broadcast::error::RecvError::Closed)) => {
+                anyhow::bail!("response channel closed")
+            }
+            Err(_) => anyhow::bail!("status query timed out"),
+        }
+    }
+
+    pub async fn read_battery(&self) -> anyhow::Result<Option<u8>> {
+        match (&self.peripheral, &self.battery) {
+            (Some(p), Some(ch)) => {
+                let val = p.read(ch).await?;
+                Ok(val.first().copied())
+            }
+            _ => Ok(None),
+        }
     }
 
     pub async fn disconnect(&mut self) -> anyhow::Result<()> {

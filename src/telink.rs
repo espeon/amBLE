@@ -55,3 +55,31 @@ pub fn telink_hsi_payload(hue: u16, saturation: u16, intensity: u16) -> [u8; 10]
     p[0] = (sum & 0xff) as u8;
     p
 }
+
+pub fn telink_rgbww_payload(
+    r: u16, g: u16, b: u16, ww: u16, cw: u16, intensity: u16,
+) -> [u8; 10] {
+    let r = r.min(1000);
+    let g = g.min(1000);
+    let b = b.min(1000);
+    let ww = ww.min(1000);
+    let cw = cw.min(1000);
+    let v = intensity.min(1000);
+
+    let word: u64 = ((v as u64) << 12)
+        | ((ww as u64) << 22)
+        | ((cw as u64) << 32)
+        | ((b as u64) << 42)
+        | ((g as u64) << 52)
+        | (((r & 3) as u64) << 62);
+
+    let word_bytes = word.to_le_bytes();
+    let mut p = [0u8; 10];
+    p[1..8].copy_from_slice(&word_bytes[1..8]);
+    p[8] = ((r >> 2) & 0xff) as u8;
+    p[9] = 0x84;
+
+    let sum: u16 = p.iter().skip(1).map(|&b| b as u16).sum();
+    p[0] = (sum & 0xff) as u8;
+    p
+}

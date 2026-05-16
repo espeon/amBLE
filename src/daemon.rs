@@ -403,6 +403,45 @@ pub async fn execute_command_json(
                 info!("{name} HSI → {b}%, hue {h}°, sat {s}%");
                 ctrl.set_hsi(addr, b, h, s).await?;
             }
+            "rgb" | "rgbww" => {
+                let r: u8 = args.first()
+                    .and_then(|s| s.parse().ok())
+                    .ok_or_else(|| anyhow::anyhow!("{cmd} requires r"))?;
+                let g: u8 = args.get(1)
+                    .and_then(|s| s.parse().ok())
+                    .ok_or_else(|| anyhow::anyhow!("{cmd} requires g"))?;
+                let b: u8 = args.get(2)
+                    .and_then(|s| s.parse().ok())
+                    .ok_or_else(|| anyhow::anyhow!("{cmd} requires b"))?;
+                let br: u8 = if cmd == "rgbww" {
+                    args.get(5).and_then(|s| s.parse().ok()).unwrap_or(100)
+                } else {
+                    args.get(3).and_then(|s| s.parse().ok()).unwrap_or(100)
+                };
+                let intensity = (br as u16 * 10).min(1000);
+                let scale = |v: u8| -> u16 { ((v as u32 * 1000 / 255) as u16).min(1000) };
+                info!("{name} RGB → R={r} G={g} B={b} @ {br}%");
+                let payload = crate::telink::telink_rgbww_payload(
+                    scale(r), scale(g), scale(b), 0, 0, intensity,
+                );
+                ctrl.send(addr, 0x26, &payload, 3).await?;
+            }
+            "status" => {
+                let raw = ctrl.query_status(addr).await?;
+                let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join("");
+                info!("{name} status → {hex}");
+                return Ok(hex);
+            }
+            "battery" => {
+                let pct = ctrl.read_battery().await?;
+                match pct {
+                    Some(p) => {
+                        info!("{name} battery → {p}%");
+                        return Ok(p.to_string());
+                    }
+                    None => return Ok("battery characteristic not available".into()),
+                }
+            }
             "ping" => return Ok("pong".into()),
             "stop" => {
                 ctrl.disconnect().await?;
