@@ -403,7 +403,7 @@ pub async fn execute_command_json(
                 info!("{name} HSI → {b}%, hue {h}°, sat {s}%");
                 ctrl.set_hsi(addr, b, h, s).await?;
             }
-            "rgb" | "rgbww" => {
+            "rgb" => {
                 let r: u8 = args.first()
                     .and_then(|s| s.parse().ok())
                     .ok_or_else(|| anyhow::anyhow!("{cmd} requires r"))?;
@@ -413,11 +413,7 @@ pub async fn execute_command_json(
                 let b: u8 = args.get(2)
                     .and_then(|s| s.parse().ok())
                     .ok_or_else(|| anyhow::anyhow!("{cmd} requires b"))?;
-                let br: u8 = if cmd == "rgbww" {
-                    args.get(5).and_then(|s| s.parse().ok()).unwrap_or(100)
-                } else {
-                    args.get(3).and_then(|s| s.parse().ok()).unwrap_or(100)
-                };
+                let br: u8 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(100);
                 let intensity = (br as u16 * 10).min(1000);
                 let scale = |v: u8| -> u16 { ((v as u32 * 1000 / 255) as u16).min(1000) };
                 info!("{name} RGB → R={r} G={g} B={b} @ {br}%");

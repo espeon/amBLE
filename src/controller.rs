@@ -6,7 +6,6 @@ use crate::pdu::{
 };
 use crate::telink::{
     telink_brightness_payload, telink_cct_payload, telink_hsi_payload, telink_payload,
-    telink_rgbww_payload,
 };
 use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Adapter, Manager, Peripheral};
@@ -446,20 +445,6 @@ impl MeshController {
     ) -> anyhow::Result<()> {
         let intensity = (brightness_percent as u16 * 10).min(1000);
         let params = telink_hsi_payload(hue, saturation, intensity);
-        self.send(dst, 0x26, &params, 3).await
-    }
-
-    pub async fn set_rgbww(
-        &mut self,
-        dst: u16,
-        r: u16,
-        g: u16,
-        b: u16,
-        ww: u16,
-        cw: u16,
-        intensity: u16,
-    ) -> anyhow::Result<()> {
-        let params = telink_rgbww_payload(r, g, b, ww, cw, intensity);
         self.send(dst, 0x26, &params, 3).await
     }
 

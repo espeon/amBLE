@@ -1,26 +1,26 @@
 # amble
 
-control Amaran/Aputure lights over BLE Mesh. ported (ish) from [Wes Bos' version](https://github.com/wesbos/amaran-BLE-control), please check there if you want more notes on the protocol etc.
+Control Amaran/Aputure lights over BLE Mesh Proxy.
 
-
-## commands
 ```sh
-amble                # REPL mode
-amble on [light]
-amble off [light]
-amble brightness <0-100> [light]
-amble cct <br> <kelvin> [gm] [light]
-amble hsi <br> <hue> <sat> [light]
-amble lights
-amble scan
-amble setup
-amble start          # launch daemon
-amble stop           # stop daemon
+amaran on [light]
+amaran off [light]
+amaran brightness <0-100> [light]
+amaran cct <br> <kelvin> [gm] [light]
+amaran hsi <br> <hue> <sat> [light]
+amaran rgb <r> <g> <b> [brightness] [light]
+amaran lights
+amaran scan
+amaran setup
+amaran start          # launch daemon
+amaran stop           # stop daemon
 ```
 
-## quick setup
+## setup
 
-run `amble setup` to import keys from the Amaran Desktop app, or enter them manually.
+Run `amaran setup` to import keys from the Amaran Desktop database
+(~/Library/Application Support/amaran Desktop) or enter them manually. Saves to
+`lights.json`.
 
-also usable as a Rust library if you
-want to embed BLE mesh control in your own tooling.
+Also usable as a Rust library (`use amble::controller::MeshController`).
+

@@ -20,7 +20,7 @@ pub fn telink_brightness_payload(intensity: u16) -> [u8; 10] {
 
 pub fn telink_cct_payload(kelvin: u16, intensity: u16, gm: i8) -> [u8; 10] {
     let v = intensity.min(1000);
-    let k = kelvin.max(2500).min(10000);
+    let k = kelvin.clamp(2500, 10000);
     let g = gm.clamp(-50, 50);
     let w12 = (k + 24) & 0x3ff;
     let gm_encoded = g.unsigned_abs() as u16;
