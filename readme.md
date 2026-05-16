@@ -1,6 +1,6 @@
 # amble
 
-control Amaran/Aputure lights over BLE Mesh. ported (ish) from [Wes Bos' version](https://github.com/wesbos/amaran-BLE-control)
+control Amaran/Aputure lights over BLE Mesh. ported (ish) from [Wes Bos' version](https://github.com/wesbos/amaran-BLE-control), please check there if you want more notes on the protocol etc.
 
 
 ## commands
