@@ -1,0 +1,41 @@
+[package]
+name = "amble"
+version = "0.1.0"
+edition = "2021"
+description = "Control Amaran/Aputure lights via BLE Mesh proxy"
+
+[lib]
+name = "amble"
+path = "src/lib.rs"
+
+[[bin]]
+name = "amaran"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli", "daemon", "setup"]
+cli = ["clap"]
+daemon = ["tiny_http", "rumqttc"]
+setup = ["rusqlite"]
+
+[dependencies]
+btleplug = "0.11"
+tokio = { version = "1", features = ["full"] }
+aes = "0.8"
+cmac = "0.7"
+ccm = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+rand = "0.8"
+futures = "0.3"
+
+clap = { version = "4", features = ["derive"], optional = true }
+tiny_http = { version = "0.12", optional = true }
+rumqttc = { version = "0.24", optional = true }
+rusqlite = { version = "0.31", features = ["bundled"], optional = true }

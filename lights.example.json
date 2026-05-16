@@ -1,0 +1,19 @@
+{
+  "netKey": "YOUR_NET_KEY_HEX_32_CHARS",
+  "appKey": "YOUR_APP_KEY_HEX_32_CHARS",
+  "relayHub": "A4:C1:38:13:41:38",
+  "lights": [
+    {
+      "key": "key",
+      "name": "Key Light",
+      "mac": "A4:C1:38:13:41:38",
+      "address": 2
+    },
+    {
+      "key": "back",
+      "name": "Back Light",
+      "mac": "A4:C1:38:13:30:86",
+      "address": 4
+    }
+  ]
+}
