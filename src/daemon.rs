@@ -423,9 +423,17 @@ pub async fn execute_command_json(
                 ctrl.send(addr, 0x26, &payload, 3).await?;
             }
             "status" => {
-                let raw = ctrl.query_status(addr).await?;
+                let raw = ctrl.query_status(addr, 0x0a).await?;
                 let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join("");
                 info!("{name} status → {hex}");
+                return Ok(hex);
+            }
+            "query" => {
+                let ct_hex = args.first().map(|s| s.as_str()).unwrap_or("0a");
+                let ct = u8::from_str_radix(ct_hex, 16).unwrap_or(0x0a);
+                let raw = ctrl.query_status(addr, ct).await?;
+                let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join("");
+                info!("{name} query(0x{ct:02x}) → {hex}");
                 return Ok(hex);
             }
             "battery" => {
@@ -570,6 +578,7 @@ commands:
   brightness <0-100> [light]  set brightness
   cct <b> <kelvin> [gm] [light]  set CCT (kelvin 2500-10000, GM -50..+50)
   hsi <b> <hue> <sat> [light]    set HSI (hue 0-360, sat 0-100)
+  rgb <r> <g> <b> [b%] [light]  set RGB (0-255 each)
   lights                      list configured lights
   help                        show this help
   exit / quit                 leave the REPL

@@ -1,11 +1,12 @@
 use crate::config::{Config, LightConfig};
-use crate::crypto::{k2, k4, DerivedNetKey};
+use crate::crypto::{aes_ccm_decrypt, k2, k4, DerivedNetKey};
 use crate::pdu::{
-    build_proxy_config_pdu, build_proxy_pdu, parse_iv_index, GROUP_ALL, LOCAL_ADDRESS,
-    PROXY_CFG_ADD_ADDRESSES, PROXY_CFG_SET_FILTER_TYPE, PROXY_FILTER_WHITELIST,
+    build_proxy_config_pdu, build_proxy_pdu, decrypt_network_pdu, parse_iv_index, GROUP_ALL,
+    LOCAL_ADDRESS, PROXY_CFG_ADD_ADDRESSES, PROXY_CFG_SET_FILTER_TYPE, PROXY_FILTER_WHITELIST,
 };
 use crate::telink::{
     telink_brightness_payload, telink_cct_payload, telink_hsi_payload, telink_payload,
+    telink_read_data_payload,
 };
 use btleplug::api::{Central, Manager as _, Peripheral as _, ScanFilter, WriteType};
 use btleplug::platform::{Adapter, Manager, Peripheral};
@@ -448,11 +449,13 @@ impl MeshController {
         self.send(dst, 0x26, &params, 3).await
     }
 
-    pub async fn query_status(&mut self, dst: u16) -> anyhow::Result<Vec<u8>> {
+    pub async fn query_status(&mut self, dst: u16, cmd_type: u8) -> anyhow::Result<Vec<u8>> {
         self.response_rx = self.response_tx.subscribe();
-        self.send(dst, 0x26, &telink_payload(0xcf, 0x01), 1).await?;
-        match timeout(Duration::from_secs(3), self.response_rx.recv()).await {
-            Ok(Ok(data)) => Ok(data),
+        let payload = telink_read_data_payload(cmd_type);
+        self.send(dst, 0x26, &payload, 1).await?;
+
+        let raw = match timeout(Duration::from_secs(3), self.response_rx.recv()).await {
+            Ok(Ok(data)) => data,
             Ok(Err(broadcast::error::RecvError::Lagged(_))) => {
                 anyhow::bail!("response channel lagged")
             }
@@ -460,7 +463,43 @@ impl MeshController {
                 anyhow::bail!("response channel closed")
             }
             Err(_) => anyhow::bail!("status query timed out"),
+        };
+
+        let iv = self.iv();
+        let (net_payload, seq, src) = decrypt_network_pdu(&raw, &self.derived.enc_key, &self.derived.priv_key, iv)
+            .ok_or_else(|| anyhow::anyhow!("failed to decrypt network PDU"))?;
+
+        if net_payload.len() < 9 {
+            anyhow::bail!("network payload too short: {} bytes", net_payload.len());
         }
+
+        let dst_response = u16::from_be_bytes([net_payload[0], net_payload[1]]);
+        let lower_transport = &net_payload[2..];
+
+        let aid_byte = lower_transport[0];
+        if (aid_byte & 0xc0) != 0x40 {
+            anyhow::bail!("unexpected lower transport header: {aid_byte:02x}");
+        }
+
+        let encrypted_access = &lower_transport[1..];
+        let mut access_nonce = [0u8; 13];
+        access_nonce[0] = 0x01;
+        access_nonce[2] = (seq >> 16) as u8;
+        access_nonce[3] = (seq >> 8) as u8;
+        access_nonce[4] = seq as u8;
+        access_nonce[5] = (src >> 8) as u8;
+        access_nonce[6] = src as u8;
+        access_nonce[7] = (dst_response >> 8) as u8;
+        access_nonce[8] = dst_response as u8;
+        access_nonce[9] = (iv >> 24) as u8;
+        access_nonce[10] = (iv >> 16) as u8;
+        access_nonce[11] = (iv >> 8) as u8;
+        access_nonce[12] = iv as u8;
+
+        let access_pdu = aes_ccm_decrypt(&self.app_key, &access_nonce, encrypted_access, 4)
+            .ok_or_else(|| anyhow::anyhow!("failed to decrypt access PDU"))?;
+
+        Ok(access_pdu)
     }
 
     pub async fn read_battery(&self) -> anyhow::Result<Option<u8>> {

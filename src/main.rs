@@ -49,10 +49,16 @@ enum Commands {
         brightness: u8,
         light: Option<String>,
     },
+    // untested — Gel, Xy, DimCurve removed until payload confirmed on hardware
     Status {
         light: Option<String>,
     },
     Battery {
+        light: Option<String>,
+    },
+    Query {
+        #[arg(default_value = "0a")]
+        cmd_type: String,
         light: Option<String>,
     },
     Start,
@@ -128,8 +134,14 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await
             }
+            // untested — Gel, Xy match arms removed
             Commands::Status { light } => run_command("status", &[], light).await,
             Commands::Battery { light } => run_command("battery", &[], light).await,
+            Commands::Query {
+                cmd_type, light,
+            } => {
+                run_command("query", &[cmd_type.clone()], light).await
+            }
             Commands::Start => start_daemon().await,
             Commands::Stop => stop_daemon().await,
             Commands::Lights => list_lights().await,

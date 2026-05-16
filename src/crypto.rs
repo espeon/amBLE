@@ -111,6 +111,14 @@ pub fn aes_ccm_encrypt(key: &[u8; 16], nonce: &[u8; 13], plaintext: &[u8], mic_l
         .expect("ccm encrypt failed")
 }
 
+pub fn aes_ccm_decrypt(key: &[u8; 16], nonce: &[u8; 13], ciphertext: &[u8], mic_len: u8) -> Option<Vec<u8>> {
+    use ccm::aead::generic_array::GenericArray;
+    assert!(mic_len == 4, "only 4-byte MIC supported");
+    let cipher = AesCcm::new_from_slice(key).ok()?;
+    let nonce_arr = GenericArray::from_slice(nonce);
+    cipher.decrypt(nonce_arr, ciphertext).ok()
+}
+
 pub fn compute_pecb(priv_key: &[u8; 16], iv_index: u32, privacy_random: &[u8; 7]) -> [u8; 16] {
     let mut input = [0u8; 16];
     input[5] = (iv_index >> 24) as u8;

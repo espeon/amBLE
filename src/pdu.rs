@@ -205,3 +205,55 @@ pub fn parse_iv_index(data: &[u8]) -> Option<u32> {
         data[11], data[12], data[13], data[14],
     ]))
 }
+
+pub fn decrypt_network_pdu(
+    data: &[u8],
+    enc_key: &[u8; 16],
+    priv_key: &[u8; 16],
+    iv_index: u32,
+) -> Option<(Vec<u8>, u32, u16)> {
+    if data.len() < 2 {
+        return None;
+    }
+    let pdu_type = data[0] & 0x3f;
+    if pdu_type != PROXY_TYPE_NETWORK {
+        return None;
+    }
+    let rest = &data[1..];
+    if rest.len() < 7 + 5 {
+        return None;
+    }
+
+    let encrypted = &rest[7..];
+    let pecb = compute_pecb(priv_key, iv_index, &encrypted[..7].try_into().ok()?);
+
+    let mut hdr = [0u8; 6];
+    for i in 0..6 {
+        hdr[i] = rest[i + 1] ^ pecb[i];
+    }
+
+    let ctl = (hdr[0] >> 7) & 1;
+    let ttl = hdr[0] & 0x7f;
+    let seq = u32::from_be_bytes([0, hdr[1], hdr[2], hdr[3]]);
+    let src = u16::from_be_bytes([hdr[4], hdr[5]]);
+
+    let mut nonce = [0u8; 13];
+    nonce[0] = 0x00;
+    nonce[1] = (ctl << 7) | (ttl & 0x7f);
+    nonce[2] = hdr[1];
+    nonce[3] = hdr[2];
+    nonce[4] = hdr[3];
+    nonce[5] = hdr[4];
+    nonce[6] = hdr[5];
+    nonce[7] = 0x00;
+    nonce[8] = 0x00;
+    nonce[9] = (iv_index >> 24) as u8;
+    nonce[10] = (iv_index >> 16) as u8;
+    nonce[11] = (iv_index >> 8) as u8;
+    nonce[12] = iv_index as u8;
+
+    let encrypted = &rest[7..];
+    let decrypted = crate::crypto::aes_ccm_decrypt(enc_key, &nonce, encrypted, 4)?;
+    Some((decrypted, seq, src))
+}
+
