@@ -14,8 +14,8 @@ use futures::stream::StreamExt;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
 use tokio::sync::broadcast;
+use tokio::sync::Notify;
 use tokio::time::{sleep, timeout};
 use tracing::{error, info};
 
@@ -44,10 +44,10 @@ pub struct MeshController {
 
 impl MeshController {
     pub async fn new(config: Config) -> anyhow::Result<Self> {
-        let net_key = hex::decode(&config.net_key)
-            .map_err(|e| anyhow::anyhow!("invalid netKey hex: {e}"))?;
-        let app_key = hex::decode(&config.app_key)
-            .map_err(|e| anyhow::anyhow!("invalid appKey hex: {e}"))?;
+        let net_key =
+            hex::decode(&config.net_key).map_err(|e| anyhow::anyhow!("invalid netKey hex: {e}"))?;
+        let app_key =
+            hex::decode(&config.app_key).map_err(|e| anyhow::anyhow!("invalid appKey hex: {e}"))?;
 
         let net_key: [u8; 16] = net_key
             .try_into()
@@ -95,8 +95,11 @@ impl MeshController {
 
     pub async fn connect(&mut self) -> anyhow::Result<bool> {
         let hub_mac = Self::normalize_addr(&self.relay_hub);
-        let known_macs: Vec<String> =
-            self.lights.iter().map(|l| Self::normalize_addr(&l.mac)).collect();
+        let known_macs: Vec<String> = self
+            .lights
+            .iter()
+            .map(|l| Self::normalize_addr(&l.mac))
+            .collect();
 
         info!("scanning for lights (relay hub: {hub_mac})...");
 
@@ -133,8 +136,8 @@ impl MeshController {
                     continue;
                 }
 
-                let is_hub = addr_str == hub_mac
-                    || (has_proxy && name == self.relay_hub.to_lowercase());
+                let is_hub =
+                    addr_str == hub_mac || (has_proxy && name == self.relay_hub.to_lowercase());
 
                 if is_hub {
                     info!("found relay hub: {name} ({addr_str})");
@@ -174,7 +177,7 @@ impl MeshController {
         let peripheral = match best {
             Some(p) => p,
             None => {
-                error!("no Amaran lights found — is the Amaran Desktop app closed?");
+                error!("no Amaran lights found, is the Amaran Desktop app closed?");
                 return Ok(false);
             }
         };
@@ -228,7 +231,7 @@ impl MeshController {
                 }
                 if let Some(iv) = parse_iv_index(&data.value) {
                     iv_index.store(iv, Ordering::SeqCst);
-                    info!("← Secure Network Beacon — IV Index: 0x{iv:08x}");
+                    info!("← Secure Network Beacon: IV Index: 0x{iv:08x}");
                     beacon_notify.notify_one();
                 }
                 if pdu_type == 0x00 {
@@ -342,7 +345,7 @@ impl MeshController {
             .await?;
 
         sleep(Duration::from_millis(300)).await;
-        info!("proxy filter configured — ready");
+        info!("proxy filter configured and ready");
         Ok(())
     }
 
@@ -404,7 +407,11 @@ impl MeshController {
                     hex::encode(&pdu)
                 );
             } else {
-                info!("    retry {} seq={seq} payload={}", i + 1, hex::encode(&pdu));
+                info!(
+                    "    retry {} seq={seq} payload={}",
+                    i + 1,
+                    hex::encode(&pdu)
+                );
             }
             self.write_with_timeout(&pdu, 1500).await?;
             if i + 1 < retries {
@@ -466,8 +473,9 @@ impl MeshController {
         };
 
         let iv = self.iv();
-        let (net_payload, seq, src) = decrypt_network_pdu(&raw, &self.derived.enc_key, &self.derived.priv_key, iv)
-            .ok_or_else(|| anyhow::anyhow!("failed to decrypt network PDU"))?;
+        let (net_payload, seq, src) =
+            decrypt_network_pdu(&raw, &self.derived.enc_key, &self.derived.priv_key, iv)
+                .ok_or_else(|| anyhow::anyhow!("failed to decrypt network PDU"))?;
 
         if net_payload.len() < 9 {
             anyhow::bail!("network payload too short: {} bytes", net_payload.len());

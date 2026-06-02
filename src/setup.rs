@@ -22,8 +22,8 @@ pub fn find_amaran_db() -> Option<String> {
 fn extract_from_db(db_path: &str) -> anyhow::Result<(String, String, Vec<LightConfig>)> {
     let conn = Connection::open(db_path)?;
 
-    let (net_key, app_key): (String, String) = conn
-        .query_row("SELECT net_key, app_key FROM mesh LIMIT 1", [], |row| {
+    let (net_key, app_key): (String, String) =
+        conn.query_row("SELECT net_key, app_key FROM mesh LIMIT 1", [], |row| {
             Ok((row.get(0)?, row.get(1)?))
         })?;
 
@@ -43,7 +43,11 @@ fn extract_from_db(db_path: &str) -> anyhow::Result<(String, String, Vec<LightCo
             let mac: String = row.get(0)?;
             let address: i64 = row.get(1)?;
             let name: String = row.get(2)?;
-            Ok((mac.trim().to_string(), address as u16, name.trim().to_string()))
+            Ok((
+                mac.trim().to_string(),
+                address as u16,
+                name.trim().to_string(),
+            ))
         })?
         .filter_map(|r| r.ok())
         .filter(|(_mac, addr, _name)| *addr >= 2)
@@ -82,9 +86,17 @@ fn ask(prompt: &str) -> String {
 }
 
 fn pick_relay_hub(lights: &[LightConfig]) -> anyhow::Result<String> {
-    println!("\nwhich light should be used as the BLE relay hub (the one your computer connects to)?");
+    println!(
+        "\nwhich light should be used as the BLE relay hub (the one your computer connects to)?"
+    );
     for (i, l) in lights.iter().enumerate() {
-        println!("  {}. {}  (address {}, MAC {})", i + 1, l.name, l.address, l.mac);
+        println!(
+            "  {}. {}  (address {}, MAC {})",
+            i + 1,
+            l.name,
+            l.address,
+            l.mac
+        );
     }
     let ans = ask("enter number [1]: ");
     let idx = ans.parse::<usize>().unwrap_or(1).saturating_sub(1);
@@ -93,7 +105,7 @@ fn pick_relay_hub(lights: &[LightConfig]) -> anyhow::Result<String> {
 }
 
 fn manual_setup() -> anyhow::Result<Config> {
-    println!("\nmanual setup — enter your mesh config values.");
+    println!("\nmanual setup: enter your mesh config values.");
     println!("(find these in ~/Library/Application Support/amaran Desktop/*/amaran.db)\n");
 
     let net_key = ask("net key (hex, 32 chars): ").to_uppercase();
@@ -183,10 +195,12 @@ pub fn run_setup() -> anyhow::Result<()> {
         println!("proceeding with manual setup.\n");
     }
 
-    let mut config = config.unwrap_or_else(|| manual_setup().unwrap_or_else(|e| {
-        eprintln!("setup failed: {e}");
-        std::process::exit(1);
-    }));
+    let mut config = config.unwrap_or_else(|| {
+        manual_setup().unwrap_or_else(|e| {
+            eprintln!("setup failed: {e}");
+            std::process::exit(1);
+        })
+    });
 
     // let user rename light keys
     println!("\nlight shorthand keys (used as CLI targets, e.g. `amaran brightness 50 key`):");
@@ -199,7 +213,7 @@ pub fn run_setup() -> anyhow::Result<()> {
 
     save_config(&config)?;
 
-    println!("\n✓ saved to lights.json");
+    println!("\n✓ saved to {}", crate::config::config_path().display());
     let hub_name = config
         .lights
         .iter()

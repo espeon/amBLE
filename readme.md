@@ -23,4 +23,3 @@ Run `amaran setup` to import keys from the Amaran Desktop database
 `lights.json`.
 
 Also usable as a Rust library (`use amble::controller::MeshController`).
-

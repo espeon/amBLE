@@ -1,5 +1,23 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::path::PathBuf;
+
+fn default_config_path() -> PathBuf {
+    if let Ok(p) = std::env::var("AMBLE_CONFIG") {
+        return PathBuf::from(p);
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        return PathBuf::from(home).join(".config").join("amble").join("lights.json");
+    }
+    if let Ok(cwd) = std::env::current_dir() {
+        return cwd.join("lights.json");
+    }
+    PathBuf::from("lights.json")
+}
+
+pub fn config_path() -> PathBuf {
+    default_config_path()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LightConfig {
@@ -59,9 +77,11 @@ pub struct Config {
 pub fn load_config(path: &Path) -> anyhow::Result<Config> {
     if !path.exists() {
         anyhow::bail!(
-            "lights.json not found.\n\
+            "lights.json not found at {}.\n\
              Run setup first:  cargo run -- setup\n\
-             Or copy the example: cp lights.example.json lights.json"
+             Or set AMBLE_CONFIG to point to your config file\n\
+             (default: ~/.config/amble/lights.json)",
+            path.display()
         );
     }
     let contents = std::fs::read_to_string(path)?;
@@ -69,7 +89,10 @@ pub fn load_config(path: &Path) -> anyhow::Result<Config> {
 }
 
 pub fn save_config(config: &Config) -> anyhow::Result<()> {
-    let path = std::env::current_dir()?.join("lights.json");
+    let path = config_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     std::fs::write(&path, serde_json::to_string_pretty(config)? + "\n")?;
     Ok(())
 }

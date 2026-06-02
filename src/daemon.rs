@@ -32,7 +32,7 @@ pub async fn run_daemon(config: Config) -> anyhow::Result<()> {
     let _ = std::fs::remove_file(&sock_path);
     std::fs::write(&pid_path, std::process::id().to_string())?;
 
-    info!("ready — listening on {sock_path}");
+    info!("ready, listening on {sock_path}");
 
     let ctrl = Arc::new(Mutex::new(ctrl));
     let http_cfg = config.http.unwrap_or(HttpConfig {
@@ -105,7 +105,7 @@ pub async fn run_daemon(config: Config) -> anyhow::Result<()> {
                 .await?;
         }
 
-        info!("MQTT connected — discovery published");
+        info!("MQTT connected: discovery published");
 
         let ctrl_mqtt = ctrl.clone();
         let tp = topic_prefix.clone();
@@ -113,11 +113,10 @@ pub async fn run_daemon(config: Config) -> anyhow::Result<()> {
             loop {
                 match eventloop.poll().await {
                     Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(p))) => {
-                        let payload: serde_json::Value =
-                            match serde_json::from_slice(&p.payload) {
-                                Ok(v) => v,
-                                Err(_) => continue,
-                            };
+                        let payload: serde_json::Value = match serde_json::from_slice(&p.payload) {
+                            Ok(v) => v,
+                            Err(_) => continue,
+                        };
                         let light_key = p
                             .topic
                             .strip_prefix(&format!("{tp}/"))
@@ -160,11 +159,8 @@ pub async fn run_daemon(config: Config) -> anyhow::Result<()> {
         for mut request in server.incoming_requests() {
             fn cors(r: Response<&[u8]>) -> Response<&[u8]> {
                 r.with_header(
-                    Header::from_bytes(
-                        b"Access-Control-Allow-Origin".as_slice(),
-                        b"*".as_slice(),
-                    )
-                    .unwrap(),
+                    Header::from_bytes(b"Access-Control-Allow-Origin".as_slice(), b"*".as_slice())
+                        .unwrap(),
                 )
                 .with_header(
                     Header::from_bytes(
@@ -184,19 +180,17 @@ pub async fn run_daemon(config: Config) -> anyhow::Result<()> {
 
             let json = |status: u16, body: String| -> Response<&[u8]> {
                 let body = body.into_bytes().leak();
-                cors(
-                    Response::new(
-                        StatusCode(status),
-                        vec![Header::from_bytes(
-                            b"Content-Type".as_slice(),
-                            b"application/json".as_slice(),
-                        )
-                        .unwrap()],
-                        body,
-                        Some(body.len()),
-                        None,
-                    ),
-                )
+                cors(Response::new(
+                    StatusCode(status),
+                    vec![Header::from_bytes(
+                        b"Content-Type".as_slice(),
+                        b"application/json".as_slice(),
+                    )
+                    .unwrap()],
+                    body,
+                    Some(body.len()),
+                    None,
+                ))
             };
 
             if request.method() == &Method::Options {
@@ -233,10 +227,7 @@ pub async fn run_daemon(config: Config) -> anyhow::Result<()> {
                 if (cmd == "on" || cmd == "off") && method == Method::Post {
                     let q = serde_json::json!({"cmd": cmd, "args": []});
                     let result = tokio::runtime::Handle::current()
-                        .block_on(execute_command_json(
-                            &mut ctrl_http.blocking_lock(),
-                            &q,
-                        ));
+                        .block_on(execute_command_json(&mut ctrl_http.blocking_lock(), &q));
                     let body = match result {
                         Ok(msg) => serde_json::json!({"ok": true, "result": msg}),
                         Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}),
@@ -257,10 +248,7 @@ pub async fn run_daemon(config: Config) -> anyhow::Result<()> {
 
                     let q = http_to_command(light_key, sub, &payload);
                     let result = tokio::runtime::Handle::current()
-                        .block_on(execute_command_json(
-                            &mut ctrl_http.blocking_lock(),
-                            &q,
-                        ));
+                        .block_on(execute_command_json(&mut ctrl_http.blocking_lock(), &q));
                     let resp = match result {
                         Ok(msg) => serde_json::json!({"ok": true, "result": msg}),
                         Err(e) => serde_json::json!({"ok": false, "error": e.to_string()}),
@@ -377,7 +365,8 @@ pub async fn execute_command_json(
                 ctrl.set_brightness(addr, pct).await?;
             }
             "cct" => {
-                let b: u8 = args.first()
+                let b: u8 = args
+                    .first()
                     .and_then(|s| s.parse().ok())
                     .ok_or_else(|| anyhow::anyhow!("cct requires brightness"))?;
                 let k: u16 = args
@@ -389,7 +378,8 @@ pub async fn execute_command_json(
                 ctrl.set_cct(addr, b, k, gm).await?;
             }
             "hsi" | "hsl" => {
-                let b: u8 = args.first()
+                let b: u8 = args
+                    .first()
                     .and_then(|s| s.parse().ok())
                     .ok_or_else(|| anyhow::anyhow!("hsi requires brightness"))?;
                 let h: u16 = args
@@ -404,13 +394,16 @@ pub async fn execute_command_json(
                 ctrl.set_hsi(addr, b, h, s).await?;
             }
             "rgb" => {
-                let r: u8 = args.first()
+                let r: u8 = args
+                    .first()
                     .and_then(|s| s.parse().ok())
                     .ok_or_else(|| anyhow::anyhow!("{cmd} requires r"))?;
-                let g: u8 = args.get(1)
+                let g: u8 = args
+                    .get(1)
                     .and_then(|s| s.parse().ok())
                     .ok_or_else(|| anyhow::anyhow!("{cmd} requires g"))?;
-                let b: u8 = args.get(2)
+                let b: u8 = args
+                    .get(2)
                     .and_then(|s| s.parse().ok())
                     .ok_or_else(|| anyhow::anyhow!("{cmd} requires b"))?;
                 let br: u8 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(100);
@@ -418,13 +411,22 @@ pub async fn execute_command_json(
                 let scale = |v: u8| -> u16 { ((v as u32 * 1000 / 255) as u16).min(1000) };
                 info!("{name} RGB → R={r} G={g} B={b} @ {br}%");
                 let payload = crate::telink::telink_rgbww_payload(
-                    scale(r), scale(g), scale(b), 0, 0, intensity,
+                    scale(r),
+                    scale(g),
+                    scale(b),
+                    0,
+                    0,
+                    intensity,
                 );
                 ctrl.send(addr, 0x26, &payload, 3).await?;
             }
             "status" => {
                 let raw = ctrl.query_status(addr, 0x0a).await?;
-                let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join("");
+                let hex = raw
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<Vec<_>>()
+                    .join("");
                 info!("{name} status → {hex}");
                 return Ok(hex);
             }
@@ -432,7 +434,11 @@ pub async fn execute_command_json(
                 let ct_hex = args.first().map(|s| s.as_str()).unwrap_or("0a");
                 let ct = u8::from_str_radix(ct_hex, 16).unwrap_or(0x0a);
                 let raw = ctrl.query_status(addr, ct).await?;
-                let hex = raw.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join("");
+                let hex = raw
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<Vec<_>>()
+                    .join("");
                 info!("{name} query(0x{ct:02x}) → {hex}");
                 return Ok(hex);
             }
@@ -470,14 +476,10 @@ fn resolve_targets(ctrl: &MeshController, light_key: Option<&str>) -> anyhow::Re
     match light_key {
         None | Some("all") => Ok(vec![0xffff]),
         Some(key) => {
-            let light = ctrl
-                .lights
-                .iter()
-                .find(|l| l.key == key)
-                .ok_or_else(|| {
-                    let keys: Vec<&str> = ctrl.lights.iter().map(|l| l.key.as_str()).collect();
-                    anyhow::anyhow!("unknown light: \"{key}\". known: {}", keys.join(", "))
-                })?;
+            let light = ctrl.lights.iter().find(|l| l.key == key).ok_or_else(|| {
+                let keys: Vec<&str> = ctrl.lights.iter().map(|l| l.key.as_str()).collect();
+                anyhow::anyhow!("unknown light: \"{key}\". known: {}", keys.join(", "))
+            })?;
             Ok(vec![light.address])
         }
     }

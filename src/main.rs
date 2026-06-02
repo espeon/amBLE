@@ -81,8 +81,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     if cli.daemon {
-        let config_path = std::env::current_dir()?.join("lights.json");
-        let config = config::load_config(&config_path)?;
+        let config = config::load_config(&config::config_path())?;
         return daemon::run_daemon(config).await;
     }
 
@@ -125,21 +124,28 @@ async fn main() -> anyhow::Result<()> {
                 .await
             }
             Commands::Rgb {
-                r, g, b, brightness, light,
+                r,
+                g,
+                b,
+                brightness,
+                light,
             } => {
                 run_command(
                     "rgb",
-                    &[r.to_string(), g.to_string(), b.to_string(), brightness.to_string()],
+                    &[
+                        r.to_string(),
+                        g.to_string(),
+                        b.to_string(),
+                        brightness.to_string(),
+                    ],
                     light,
                 )
                 .await
             }
-            // untested — Gel, Xy match arms removed
+            // untested! Gel, Xy match arms removed
             Commands::Status { light } => run_command("status", &[], light).await,
             Commands::Battery { light } => run_command("battery", &[], light).await,
-            Commands::Query {
-                cmd_type, light,
-            } => {
+            Commands::Query { cmd_type, light } => {
                 run_command("query", &[cmd_type.clone()], light).await
             }
             Commands::Start => start_daemon().await,
@@ -155,8 +161,7 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn run_command(cmd: &str, args: &[String], light: Option<String>) -> anyhow::Result<()> {
-    let config_path = std::env::current_dir()?.join("lights.json");
-    let config = config::load_config(&config_path)?;
+    let config = config::load_config(&config::config_path())?;
 
     if std::path::Path::new(&daemon::socket_path()).exists() {
         let req = serde_json::json!({"cmd": cmd, "args": args, "light": light});
@@ -193,17 +198,17 @@ async fn run_command(cmd: &str, args: &[String], light: Option<String>) -> anyho
 }
 
 async fn run_repl() -> anyhow::Result<()> {
-    let config_path = std::env::current_dir()?.join("lights.json");
-    if !config_path.exists() {
-        eprintln!("no lights.json found. run setup: npm run setup");
+    let cfg_path = config::config_path();
+    if !cfg_path.exists() {
+        eprintln!("no lights.json found. run setup: cargo run -- setup");
         std::process::exit(1);
     }
 
     if std::path::Path::new(&daemon::socket_path()).exists() {
-        println!("daemon running — commands are instant. type 'exit' or ctrl+c to quit.");
+        println!("daemon running. type 'exit' or ctrl+c to quit.");
         repl_via_daemon().await?;
     } else {
-        let config = config::load_config(&config_path)?;
+        let config = config::load_config(&cfg_path)?;
         println!("connecting to lights (start daemon for instant commands)...");
         let mut ctrl = controller::MeshController::new(config).await?;
         if !ctrl.connect().await? {
@@ -267,12 +272,9 @@ async fn repl_via_daemon() -> anyhow::Result<()> {
 }
 
 fn parse_line(parts: &[&str]) -> (String, Vec<String>, Option<String>) {
-    let config_path = std::env::current_dir()
-        .ok()
-        .map(|cwd| cwd.join("lights.json"))
-        .unwrap_or_default();
-    let known_keys: Vec<String> = if config_path.exists() {
-        config::load_config(&config_path)
+    let cfg_path = config::config_path();
+    let known_keys: Vec<String> = if cfg_path.exists() {
+        config::load_config(&cfg_path)
             .map(|c| c.lights.iter().map(|l| l.key.clone()).collect())
             .unwrap_or_default()
     } else {
@@ -390,8 +392,7 @@ async fn stop_daemon() -> anyhow::Result<()> {
 }
 
 async fn list_lights() -> anyhow::Result<()> {
-    let config_path = std::env::current_dir()?.join("lights.json");
-    let config = config::load_config(&config_path)?;
+    let config = config::load_config(&config::config_path())?;
     println!("configured lights:");
     for light in &config.lights {
         let hub = light.mac.to_uppercase() == config.relay_hub.to_uppercase();
