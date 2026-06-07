@@ -20,19 +20,28 @@ pub fn telink_brightness_payload(intensity: u16) -> [u8; 10] {
 
 pub fn telink_cct_payload(kelvin: u16, intensity: u16, gm: i8) -> [u8; 10] {
     let v = intensity.min(1000);
-    let k = kelvin.clamp(2500, 10000);
-    let g = gm.clamp(-50, 50);
-    let w12 = (k + 24) & 0x3ff;
-    let gm_encoded = g.unsigned_abs() as u16;
-    let gm_flag: u16 = if g < 0 { 1 } else { 0 };
+    let tcct = (((kelvin as u32 + 5) / 10) as u16).clamp(80, 2000);
+    let g = (gm + 10).clamp(0, 20) as u64;
 
+    let mut low: u64 = ((v & 3) as u64) << 62;
+    let mut high: u16 = 0x8200 | (((v >> 2) & 0xff) as u16);
+
+    if tcct < 1001 {
+        low |= (tcct as u64) << 52;
+        high |= ((tcct >> 12) & 0xff) as u16;
+    } else {
+        low |= (((tcct as u32 + 0x18) & 0x3ff) as u64) << 52;
+        low |= 0x0000040000000000u64;
+    }
+
+    low |= 0u64 << 43; // gm_flag always 0
+    low |= g << 45;
+
+    let low_bytes = low.to_le_bytes();
     let mut p = [0u8; 10];
-    p[4] = 0x40;
-    p[5] = (((gm_encoded & 7) << 5) | (gm_flag << 3)) as u8;
-    p[6] = (((w12 & 0xf) << 4) | ((gm_encoded >> 3) & 0xf)) as u8;
-    p[7] = (((w12 >> 4) & 0x3f) | ((v & 3) << 6)) as u8;
-    p[8] = ((v >> 2) & 0xff) as u8;
-    p[9] = 0x82;
+    p[1..8].copy_from_slice(&low_bytes[1..8]);
+    p[8] = (high & 0xff) as u8;
+    p[9] = ((high >> 8) & 0xff) as u8;
 
     let sum: u16 = p.iter().skip(1).map(|&b| b as u16).sum();
     p[0] = (sum & 0xff) as u8;

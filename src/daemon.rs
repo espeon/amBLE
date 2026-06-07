@@ -421,14 +421,13 @@ pub async fn execute_command_json(
                 ctrl.send(addr, 0x26, &payload, 3).await?;
             }
             "status" => {
-                let raw = ctrl.query_status(addr, 0x0a).await?;
-                let hex = raw
-                    .iter()
-                    .map(|b| format!("{b:02x}"))
-                    .collect::<Vec<_>>()
-                    .join("");
+                let access_pdu = ctrl.query_status(addr, 0x0e).await?;
+                let hex = access_pdu.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
                 info!("{name} status → {hex}");
-                return Ok(hex);
+                match decode_light_status(&access_pdu) {
+                    Some(s) => return Ok(s),
+                    None => return Ok(hex),
+                }
             }
             "query" => {
                 let ct_hex = args.first().map(|s| s.as_str()).unwrap_or("0a");
@@ -578,7 +577,7 @@ commands:
   on [light]                  turn light on
   off [light]                 turn light off
   brightness <0-100> [light]  set brightness
-  cct <b> <kelvin> [gm] [light]  set CCT (kelvin 2500-10000, GM -50..+50)
+  cct <b> <kelvin> [gm] [light]  set CCT (GM -10..+10)
   hsi <b> <hue> <sat> [light]    set HSI (hue 0-360, sat 0-100)
   rgb <r> <g> <b> [b%] [light]  set RGB (0-255 each)
   lights                      list configured lights
@@ -587,3 +586,66 @@ commands:
 
 light target (optional, default = all):  use the key from lights.json, e.g. key, back, fill
 ";
+
+fn checksum(p: &[u8; 10]) -> bool {
+    let s: u16 = p[1..10].iter().map(|&b| b as u16).sum();
+    p[0] == (s & 0xff) as u8
+}
+
+fn decode_light_status(payload: &[u8]) -> Option<String> {
+    if payload.len() < 10 {
+        return None;
+    }
+    let telink_data = &payload[payload.len() - 10..];
+    let mut p = [0u8; 10];
+    p.copy_from_slice(telink_data);
+    if !checksum(&p) {
+        // Return raw hex if checksum fails
+        let hex: String = p.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+        return Some(format!("bad checksum: {hex}"));
+    }
+
+    let cmd = p[9] & 0x7f;
+
+    let mut low: u64 = 0;
+    for i in 0..8 {
+        low |= (p[i] as u64) << (i * 8);
+    }
+    let high = p[8] as u16 | ((p[9] as u16) << 8);
+    let on = (low >> 8) & 1 != 0;
+
+    match cmd {
+        0x02 => {
+            let cct_raw = (low >> 52) as u16 & 0x3ff;
+            let cct_flag = ((low >> 42) & 1) != 0;
+            let tcct = if cct_flag { cct_raw + 1000 } else { cct_raw };
+            let intensity = (((high as u32 & 0xff) << 2) | ((low >> 62) as u32 & 3)) & 0x3ff;
+            let gm_raw = ((low >> 45) & 0x7f) as i32;
+            let gm = gm_raw - 10;
+            Some(format!(
+                "CCT mode, {}: {}K, {}%, GM {}",
+                if on { "on" } else { "off" },
+                tcct * 10,
+                intensity * 100 / 1000,
+                gm,
+            ))
+        }
+        0x01 => {
+            let sat = ((((p[6] as u16) & 0x1f) << 2) | ((p[5] as u16) >> 6 & 3)).min(100);
+            let hue = ((((p[7] as u16) & 0x3f) << 3) | ((p[6] as u16) >> 5 & 7)).min(360);
+            let v = (((p[8] as u16) << 2) | ((p[7] as u16) >> 6 & 3)).min(1000);
+            Some(format!(
+                "HSI mode, {}: hue {}°, sat {}%, {}%",
+                if on { "on" } else { "off" },
+                hue,
+                sat,
+                v * 100 / 1000,
+            ))
+        }
+        _ => {
+            let hex: String = p.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ");
+            Some(format!("cmd 0x{cmd:02x}, {}: {hex}", if on { "on" } else { "off" }))
+        }
+    }
+}
+
